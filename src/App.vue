@@ -15,7 +15,7 @@
       <v-list-item-avatar style="margin-left: 8px;">
         <v-img src="./assets/png/1024x1024.png" alt="logo" max-width="25" max-height="25" />
       </v-list-item-avatar>
-      <v-lits-item-title style="text-capitalize">Random APP</v-lits-item-title>
+      <v-list-item-title style="text-capitalize">Random APP</v-list-item-title>
     </v-list-item>
 
     <!-- menu list -->
@@ -80,9 +80,9 @@
 
     </v-app-bar>
 
-    <v-content>
+    <v-main>
       <router-view />
-    </v-content>
+    </v-main>
 
   </v-app>
 </template>

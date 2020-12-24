@@ -1,20 +1,8 @@
 const sqlite3 = require('sqlite3').verbose()
-let db
+var path = require('path')
+let db = new sqlite3.Database(path.join(__dirname, '..', '/../','db', 'base.db'));
 
-function conn () {
-  if (!db || !db.open) {
-    db = new sqlite3.Database('base.db')
-  }
-  return db
-}
-
-export const initTable = () => {
-    return new Promise((resolve, reject) => {
-      let db = conn()
-      db.serialize(() => {
-        db.run('CREATE TABLE if not exists HistoryTable (id int primary key, name varchar(64))')
-        db.run('CREATE TABLE IF NOT EXISTS RecordTable (id int primary key, name varchar(64), parentId int)')
-        resolve()
-      })
-    })
-  }
+db.serialize(() => {
+  db.run('CREATE TABLE if not exists history (id int primary key, name varchar(64))')
+  db.run('CREATE TABLE IF NOT EXISTS record (id int primary key, name varchar(64), history_id int)')
+})

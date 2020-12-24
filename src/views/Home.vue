@@ -27,6 +27,11 @@
 
       <v-col v-if="!show_results" cols="12">
         <v-card class="pa-8">
+
+          <!-- Error Messages -->
+          <v-snackbar :timeout="-1" :value="error" color="blue-grey" absolute rounded="pill" top class="mt-2"> {{ error }}</v-snackbar>
+
+          <!-- Actions -->
           <v-card-title>
             <div class="d-flex align-top">
               <v-select v-model="action" :items="actions" label="Bulk Actions" outlined dense></v-select>
@@ -40,10 +45,22 @@
               </div>
               <v-btn color="primary" @click="randomNow" class="mt-1 ml-3">Randomize Now</v-btn>
             </div>
-            
           </v-card-title>
         
-          <v-data-table v-model="selected" :headers="headers" :items="items" item-key="name" show-select class="elevation-1" dense>
+          <v-data-table v-model="selected" :headers="headers" :items="items" single-select item-key="name" show-select class="elevation-1" dense>
+
+             <template v-slot:body="{ items }">
+              <tbody>
+                <tr v-for="item in items" :key="item.id">
+                  <td>
+                    <v-checkbox v-model="selected" :value="item" style="margin:0px;padding:0px" hide-details @change="preSelect()"/>
+                  </td>
+                  <td>{{ item.id }}</td>
+                  <td>{{ item.name }}</td>
+                  <td>{{ item.pre_random ? 'Yes' : 'No'}}</td>
+                </tr>
+              </tbody>
+             </template>
           </v-data-table>
         </v-card>
         
@@ -54,11 +71,34 @@
           <v-card-title>
             <h3>Result</h3>
             <v-spacer></v-spacer>
-            <v-btn color="primary" @click="show_results = !show_results" class="mt-1 ml-3">Randomize Again</v-btn>
-            <v-btn color="success" class="mt-1 ml-4">Save</v-btn>
+            <v-btn color="primary" @click="randomAgain" class="mt-1 ml-3">Randomize Again</v-btn>
+            <v-btn color="warning" @click="shuffleOrder" class="mt-1 ml-3">Shuffle Order</v-btn>
+            <v-btn color="indigo" dark class="mt-1 ml-3">
+              <vue-excel-xlsx
+                :data="results"
+                :columns="columns"
+                :filename="'random_result_'+time"
+                :sheetname="'result'"
+                >Export Excel <v-icon class="ml-2">get_app</v-icon>
+                </vue-excel-xlsx> 
+                
+            </v-btn>
+
+            <v-btn color="success" class="mt-1 ml-4" disabled>Save</v-btn>
           </v-card-title>
 
-          <v-data-table :headers="headers" :items="results" item-key="name" class="elevation-1" dense>
+          <!-- Highlight color pink on pre-random items -->
+          <v-data-table :headers="headers" :items="results" item-key="name" class="resulttable elevation-1" dense>
+            <template v-slot:body="{ items }">
+              <tbody>
+                <tr :class="item.pre_random ? 'hightlight' : ''" v-for="item in items" :key="item.id">
+                  <td>{{ item.id }}</td>
+                  <td>{{ item.name }}</td>
+                  <td>{{ item.pre_random ? 'Yes' : 'No'}}</td>
+                </tr>
+              </tbody>
+            </template>
+
           </v-data-table>
         </v-card>
         
@@ -79,22 +119,21 @@ import _ from 'lodash'
 
 export default {
   name: 'Home',
-  components: {
-    //
-  },
+
   data: () => ({
     file: null,
     values: [],
     items: [],
     random_number: 5,
     uniq: true,
+    winners: [],
     show: false,
-    time: '',
+    time: moment().format(),
     rules: [
       value => !value || value.size < 20000000 || 'file size should be less than 20 MB!',
     ],
     action: '',
-    actions: ['...', 'Remove item(s)', 'Undo All Actions', 'Upload Again'],
+    actions: ['...', 'Clear all selected item(s)', 'Remove item(s)', 'Return list to original', 'Upload Again'],
     selected: [],
     results: [],
     show_results: false,
@@ -106,7 +145,15 @@ export default {
         value: 'id',
       },
       { text: 'Username', value: 'name' },
+      { text: 'Pre-Random', value: 'pre_random' },
     ],
+    columns: [
+      { label: 'ID', field: 'id' },
+      { label: 'Username', field: 'name' },
+      { label: 'Pre-random', field: 'pre_random' }
+    ],
+    error: '',
+    snackbar: true,
   }),
 
   methods: {
@@ -128,8 +175,6 @@ export default {
 
         reader.readAsBinaryString(this.file)
 
-        this.time = moment().format('MMMM Do YYYY, h:mm:ss a');
-
         this.show = true
 
       }
@@ -145,6 +190,7 @@ export default {
         this.values[i] = {
           id: json[i+1][0],
           name: json[i+1][1],
+          pre_random: false,
           date: moment().format('MMMM Do YYYY, h:mm:ss a')
         }
       }
@@ -158,27 +204,71 @@ export default {
         this.selected.forEach(key => {
           this.items = this.items.filter(i => i.id != key.id)
         })
+        this.selected = [];
       }
-      if(this.action == "Undo All Actions"){
+      if(this.action == "Return list to original"){
         this.items = this.values
       }
       if(this.action == "Upload Again"){
+        this.selected = []
         this.file = null
-      this.items = []
+        this.items = []
+        this.action = ''
       }
+      if(this.action == 'Clear all selected item(s)'){
+        this.selected.forEach(i => i.pre_random = false);
+        this.selected = [];
+      }
+      this.action = '';
     },
 
     randomNow() {
 
-      if(this.items.length > 1 ){
-        this.results = _.shuffle(this.items);
-        this.results = _.slice(this.results, 0, this.random_number);
+      if(this.items.length > 1 && this.items.length > this.winners.length && this.random_number > this.selected.length ){
+
+        let raw = this.items;
+
+        if(this.selected.length) {
+          this.selected.forEach(key => {
+            raw = raw.filter( i => i.name != key.name );
+          })
+        }
+
+        let preresult = [];
+        preresult = _.shuffle(raw);
+        preresult = this.selected.length ? _.slice(preresult, 0, this.random_number - this.selected.length ) : _.slice(preresult, 0, this.random_number) ;
+        let temp_selected = this.selected;
+
+        this.results = temp_selected.concat(preresult);
         this.show_results = true
+
+      } else {
+        this.error = "Error: Number of random should be bigger than pre-random items."
       }
 
+    },
+
+    randomAgain() {
+      this.show_results = false;
+      this.results = [];
+      this.error = ''
+    },
+
+    preSelect() {
+      this.items.forEach(i => i.pre_random = false);
+      this.selected.forEach(j => j.pre_random = true);
+    },
+
+    shuffleOrder() {
+      this.results = _.shuffle(this.results);
     }
 
   },
 
 }
 </script>
+<style>
+.hightlight {
+  background-color: lightcyan !important;
+}
+</style>
